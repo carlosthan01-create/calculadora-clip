@@ -94,6 +94,37 @@ details[open] summary::after{content:"–"}
 .check{display:flex;gap:10px;align-items:center;padding:10px 0;font-size:14.5px;border-top:1px solid var(--line);margin-top:8px}
 .check input{width:20px;height:20px;accent-color:var(--teal-deep)}
 .reset{background:none;border:0;color:var(--teal-deep);font:inherit;font-size:14.5px;padding:8px 0 16px;cursor:pointer}
+.tag{display:inline-block;font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--teal-deep);border:1px solid var(--line);border-radius:999px;padding:3px 10px;margin:28px 4px 0;background:var(--card)}
+.tag+h2{margin-top:8px}
+.badge{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.03em;border-radius:999px;padding:2px 8px;margin-left:8px;vertical-align:2px}
+.badge.ok{background:var(--teal);color:#12262b}
+.badge.no{background:none;border:1px solid var(--line);color:var(--muted)}
+li.off .plan,li.off .sub,li.off .charge{opacity:.45}
+.prop{background:var(--card);border:1px solid var(--line);border-radius:20px;overflow:hidden}
+.prop .blk{padding:16px}
+.prop .blk+.blk{border-top:1px solid var(--line)}
+.kicker{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 4px}
+.big{font-size:34px;font-weight:600;letter-spacing:-.01em;line-height:1.1}
+.blk.cashp{background:var(--hero);color:var(--hero-ink)}
+.blk.cashp .kicker{color:var(--hero-muted)}
+.blk.cashp .big{color:var(--teal)}
+.blk.cashp p{margin:6px 0 0;font-size:14px;color:var(--hero-muted);line-height:1.4}
+.pill{display:inline-block;background:var(--teal);color:#12262b;font-size:13px;font-weight:600;border-radius:999px;padding:3px 10px;margin-bottom:8px}
+.msi{list-style:none;margin:6px 0 0;padding:0}
+.msi li{display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;font-size:16px}
+.msi li+li{border-top:1px dashed var(--line)}
+.msi b{font-size:19px;font-weight:600}
+.msi small{font-size:13px;color:var(--muted);font-weight:400}
+.speech{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:20px;padding:16px;margin-top:14px}
+.speech h3{font-size:15px;font-weight:600;margin:0 0 10px}
+.speech p{margin:0 0 12px;font-size:16px;line-height:1.5}
+.speech p:last-of-type{margin-bottom:0}
+.inner dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:7px 12px;font-size:14.5px;padding-bottom:6px}
+.inner dt,.inner dd{margin:0}
+.inner dd{text-align:right;font-weight:500}
+.inner dd.low{color:var(--warn)}
+.inner p{font-size:13px;color:var(--muted);line-height:1.45;margin:6px 0 14px}
 footer{font-size:12.5px;color:var(--muted);line-height:1.5;margin:18px 4px 0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -108,12 +139,30 @@ footer{font-size:12.5px;color:var(--muted);line-height:1.5;margin:18px 4px 0}
     <p>Escribe el precio del tratamiento. Abajo verás cuánto cobrar en la terminal Clip para que la comisión la cubra el paciente.</p>
   </section>
 
+  <span class="tag">A · Cálculo interno</span>
   <h2>Cuánto cobrar en la terminal</h2>
   <ul class="opts" id="opts"></ul>
 
   <div class="actions">
-    <button class="main" id="copy" disabled>Copiar opciones para el paciente</button>
+    <button class="main" id="copy" disabled>Copiar cálculo interno</button>
   </div>
+
+  <span class="tag">B · Propuesta para el paciente</span>
+  <h2>Propuesta para el paciente</h2>
+  <div id="prop"></div>
+  <div class="speech" id="speechCard" hidden>
+    <h3>Speech sugerido para el paciente</h3>
+    <div id="speech"></div>
+  </div>
+  <div class="actions">
+    <button class="main" id="copySpeech" disabled>Copiar speech</button>
+  </div>
+
+  <details class="inner" id="innerBox" hidden>
+    <summary>Uso interno: lo que recibe la clínica con esta propuesta</summary>
+    <dl id="innerList"></dl>
+    <p id="innerNote"></p>
+  </details>
 
   <details>
     <summary>Ajustar comisiones</summary>
@@ -129,6 +178,20 @@ footer{font-size:12.5px;color:var(--muted);line-height:1.5;margin:18px 4px 0}
 (function(){
   var DEF={base:3.6,fijo:0,iva:16,s:{3:4.57,6:7.57,9:11.07,12:12.77,18:19.27,24:27.17},round:true};
   var PLANS=[0,3,6,9,12,18,24], KEY='cde-clip-v1';
+
+  /* ===== CONFIGURACIÓN COMERCIAL (editar aquí) =====
+     min / max        : rango del monto ORIGINAL ("Quiero recibir íntegro")
+     allowedMonths    : MSI que se pueden ofrecer al paciente
+     referenceMonths  : plazo cuyo total (fórmula Clip) define el precio regular
+     cashDiscount     : descuento de contado sobre el precio regular (0.10 = 10%)
+     ROUND_TO         : múltiplo del redondeo comercial del precio regular */
+  var ROUND_TO=100;
+  var RANGOS=[
+    {min:5000,  max:9999.99,  allowedMonths:[3],        referenceMonths:3,  cashDiscount:0.10},
+    {min:10000, max:24999.99, allowedMonths:[3,6,9],    referenceMonths:6,  cashDiscount:0.10},
+    {min:25000, max:50000,    allowedMonths:[3,6,9,12], referenceMonths:12, cashDiscount:0.20}
+  ];
+  /* ================================================= */
   var cfg=JSON.parse(JSON.stringify(DEF)), open=null;
   try{var sv=JSON.parse(localStorage.getItem(KEY)||'null');
     if(sv&&sv.s){cfg=sv;for(var k in DEF.s)if(typeof cfg.s[k]!=='number')cfg.s[k]=DEF.s[k];}}catch(e){}
@@ -136,6 +199,7 @@ footer{font-size:12.5px;color:var(--muted);line-height:1.5;margin:18px 4px 0}
 
   var $=function(id){return document.getElementById(id)};
   var neto=$('neto'),opts=$('opts'),copy=$('copy'),set=$('set'),round=$('round');
+  var prop=$('prop'),speech=$('speech'),speechCard=$('speechCard'),copySpeech=$('copySpeech'),innerBox=$('innerBox'),innerList=$('innerList'),innerNote=$('innerNote');
   var fm=function(n,d){return '$'+n.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d})};
   var money=function(n){return fm(n,Math.abs(n-Math.round(n))<0.005?0:2)};
   var num=function(v){var n=parseFloat(String(v).replace(/[^0-9.]/g,''));return isFinite(n)?n:0};
@@ -148,19 +212,66 @@ footer{font-size:12.5px;color:var(--muted);line-height:1.5;margin:18px 4px 0}
     var com=Math.round((P*rate+fee)*100)/100;
     return {m:m,P:P,com:com,net:P-com,mes:m?P/m:0,pct:(P/N-1)*100};
   }
+  function rango(N){for(var i=0;i<RANGOS.length;i++)if(N>=RANGOS[i].min&&N<=RANGOS[i].max)return RANGOS[i];return null}
+  function lista(a){return a.length<2?String(a[0]):a.slice(0,-1).join(', ')+' y '+a[a.length-1]}
+  /* Lo que deposita Clip al cobrar X a m meses (mismas tarifas que calc) */
+  function netoDe(X,m){var iva=1+cfg.iva/100, rate=(cfg.base+(m?cfg.s[m]:0))/100*iva, fee=cfg.fijo*iva;
+    return X-Math.round((X*rate+fee)*100)/100}
+  function propuesta(){
+    var N=num(neto.value), g=rango(N); if(!g) return null;
+    var ref=calc(N,g.referenceMonths); if(!ref) return null;
+    var regular=Math.round(ref.P/ROUND_TO)*ROUND_TO;
+    var ahorro=Math.round(regular*g.cashDiscount*100)/100, contado=regular-ahorro;
+    var pct=Math.round(g.cashDiscount*10000)/100;
+    var meses=g.allowedMonths.map(function(m){return {m:m,mes:Math.round(regular/m*100)/100}});
+    var speech=['El costo total de su tratamiento es de '+money(regular)+' pesos.',
+      'Actualmente tenemos disponibles '+lista(g.allowedMonths)+' meses sin intereses con tarjetas participantes.',
+      'Si prefiere realizar su pago de contado, ya sea con tarjeta o transferencia, le ofrecemos un '+pct+'% de descuento, por lo que su tratamiento queda en '+money(contado)+' pesos.',
+      'Puede elegir la opción de pago que le resulte más conveniente.'];
+    return {N:N,g:g,regular:regular,pct:pct,ahorro:ahorro,contado:contado,meses:meses,speech:speech};
+  }
+  function renderProp(){
+    var N=num(neto.value), Q=propuesta();
+    copySpeech.disabled=!Q; speechCard.hidden=!Q; innerBox.hidden=!Q;
+    if(!Q){
+      var lo=RANGOS[0].min, hi=RANGOS[RANGOS.length-1].max;
+      prop.innerHTML='<div class="prop"><div class="empty">'+(N>0
+        ?'Este monto está fuera de los rangos configurados ('+money(lo)+' a '+money(hi)+'). No hay propuesta comercial definida.'
+        :'Captura el monto para generar la propuesta y el speech.')+'</div></div>';
+      return;
+    }
+    prop.innerHTML='<div class="prop">'+
+      '<div class="blk"><p class="kicker">Precio regular</p><div class="big">'+money(Q.regular)+'</div></div>'+
+      '<div class="blk cashp"><p class="kicker">Pago de contado</p><span class="pill">'+Q.pct+'% de descuento</span>'+
+        '<div class="big">'+money(Q.contado)+'</div><p>Ahorro de '+money(Q.ahorro)+' · Transferencia o tarjeta en una sola exhibición</p></div>'+
+      '<div class="blk"><p class="kicker">Meses sin intereses</p><ul class="msi">'+
+        Q.meses.map(function(x){return '<li><span>'+x.m+' MSI</span><span><b>'+money(x.mes)+'</b> <small>/mes</small></span></li>'}).join('')+
+      '</ul></div></div>';
+    speech.innerHTML=Q.speech.map(function(t){return '<p>'+t+'</p>'}).join('');
+    var rows=[['Transferencia ('+money(Q.contado)+')',Q.contado],
+              ['Tarjeta, una exhibición ('+money(Q.contado)+')',netoDe(Q.contado,0)]]
+      .concat(Q.meses.map(function(x){return [x.m+' MSI ('+money(Q.regular)+')',netoDe(Q.regular,x.m)]}));
+    innerList.innerHTML=rows.map(function(r){
+      return '<dt>'+r[0]+'</dt><dd class="'+(r[1]<Q.N-0.005?'low':'')+'">'+fm(r[1],2)+'</dd>'}).join('');
+    innerNote.textContent='Monto objetivo: '+fm(Q.N,2)+'. En color de aviso, las opciones en las que la clínica recibe menos que ese monto. No mostrar al paciente.';
+  }
+
   function results(){var N=num(neto.value);if(N<=0)return [];
     return PLANS.map(function(m){return calc(N,m)}).filter(Boolean)}
 
   function render(){
-    var R=results(); copy.disabled=!R.length;
+    var R=results(); copy.disabled=!R.length; renderProp();
+    var G=rango(num(neto.value));
     if(!R.length){opts.innerHTML='<li class="empty">Captura el monto del presupuesto para ver el cobro de contado y a 3, 6, 9, 12, 18 y 24 meses.</li>';return}
     opts.innerHTML=R.map(function(r){
       var name=r.m?r.m+' meses sin intereses':'Una sola exhibición';
       var sub=r.m?r.m+' pagos de '+fm(r.mes,2):'Tarjeta de débito o crédito';
       var warn=r.m&&r.P<=300?'<p class="note">Clip solo permite meses sin intereses en cobros mayores a $300.</p>':'';
-      return '<li class="'+(r.m?'':'cash ')+(open===r.m?'open':'')+'">'+
+      var ok=r.m&&G&&G.allowedMonths.indexOf(r.m)>-1;
+      var badge=r.m?(ok?'<span class="badge ok">Autorizado</span>':'<span class="badge no">No ofrecer</span>'):'';
+      return '<li class="'+(r.m?(ok?'':'off '):'cash ')+(open===r.m?'open':'')+'">'+
         '<button class="row" data-m="'+r.m+'" aria-expanded="'+(open===r.m)+'">'+
-        '<span class="plan">'+name+'</span><span class="sub">'+sub+'</span>'+
+        '<span class="plan">'+name+badge+'</span><span class="sub">'+sub+'</span>'+
         '<span class="charge">'+money(r.P)+'<small>+'+r.pct.toFixed(1)+'% sobre tu precio</small></span></button>'+
         '<div class="detail"><dl>'+
         '<dt>Cobras en la terminal</dt><dd>'+fm(r.P,2)+'</dd>'+
@@ -185,9 +296,16 @@ footer{font-size:12.5px;color:var(--muted);line-height:1.5;margin:18px 4px 0}
     var t='Corporativo Dental Estético\nOpciones de pago con tarjeta:\n'+R.filter(function(r){return !r.m||r.P>300}).map(function(r){
       return r.m?'• '+r.m+' meses sin intereses: '+r.m+' pagos de '+fm(r.mes,2)+' (total '+money(r.P)+')'
                 :'• Una sola exhibición: '+money(r.P)}).join('\n');
-    var done=function(ok){copy.textContent=ok?'Opciones copiadas':'No se pudo copiar';
-      setTimeout(function(){copy.textContent='Copiar opciones para el paciente'},1800)};
+    var done=function(ok){copy.textContent=ok?'Cálculo copiado':'No se pudo copiar';
+      setTimeout(function(){copy.textContent='Copiar cálculo interno'},1800)};
     try{navigator.clipboard.writeText(t).then(function(){done(true)},function(){done(false)})}catch(e){done(false)}
+  });
+
+  copySpeech.addEventListener('click',function(){
+    var Q=propuesta();if(!Q)return;
+    var done=function(ok){copySpeech.textContent=ok?'Speech copiado':'No se pudo copiar';
+      setTimeout(function(){copySpeech.textContent='Copiar speech'},1800)};
+    try{navigator.clipboard.writeText(Q.speech.join('\n\n')).then(function(){done(true)},function(){done(false)})}catch(e){done(false)}
   });
 
   function field(label,get,put){
